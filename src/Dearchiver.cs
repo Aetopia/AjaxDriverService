@@ -96,7 +96,7 @@ static class Dearchiver
                 if (string.IsNullOrWhiteSpace(@string)) continue;
 
                 var strings = @string.Split('%');
-                if (!strings.Any() || !int.TryParse(strings[0], out var result))
+                if (strings.Length > 0 || !int.TryParse(strings[0], out var result))
                     continue;
 
                 if (progress != result)
