@@ -16,17 +16,17 @@ using static System.Environment;
 
 static class Drivers
 {
-    const string Uri = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&osCode={0}&is64bit={1}&deviceID={2}&dch={3}&upCRD={4}";
+    const string Format = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&osCode={0}&is64bit={1}&deviceID={2}&dch={3}&upCRD={4}";
 
-    static readonly string Address = string.Format(Uri, $"{OSVersion.Version.Major}.{OSVersion.Version.Minor}", Is64BitOperatingSystem ? 1 : 0, "{0}", "{1}", "{2}");
+    static readonly string _format = string.Format(Format, $"{OSVersion.Version.Major}.{OSVersion.Version.Minor}", Is64BitOperatingSystem ? 1 : 0, "{0}", "{1}", "{2}");
 
     static async Task<Dictionary<string, string>> GetDriversAsync(string value)
     {
         Dictionary<string, string> collection = [];
 
-        var format = string.Format(Address, value, "{0}", "{1}");
+        var format = string.Format(_format, value, "{0}", "{1}");
 
-        Task<Tuple<string, string>>[] tasks = [GetUriAsync(string.Format(format, 0, 0)), GetUriAsync(string.Format(format, 1, 0))];
+        Task<Tuple<string, string>>[] tasks = [GetDriverAsync(string.Format(format, 0, 0)), GetDriverAsync(string.Format(format, 1, 0))];
         await Task.WhenAll(tasks);
 
         Tuple<string, string> standard = await tasks[0], dch = await tasks[1];
@@ -34,20 +34,20 @@ static class Drivers
         if (dch is not null)
         {
             collection.Add(dch.Item1, dch.Item2);
-            dch = await GetUriAsync(string.Format(format, 1, 1));
+            dch = await GetDriverAsync(string.Format(format, 1, 1));
             if (dch is not null) collection.Add(dch.Item1, dch.Item2);
         }
         else if (standard is not null)
         {
             collection.Add(standard.Item1, standard.Item2);
-            standard = await GetUriAsync(string.Format(format, 0, 1));
+            standard = await GetDriverAsync(string.Format(format, 0, 1));
             if (standard is not null) collection.Add(standard.Item1, standard.Item2);
         }
 
         return collection;
     }
 
-    static async Task<Tuple<string, string>> GetUriAsync(string address)
+    static async Task<Tuple<string, string>> GetDriverAsync(string address)
     {
         using var stream = await Internet.GetStreamAsync(address);
         using var reader = JsonReaderWriterFactory.CreateJsonReader(stream, XmlDictionaryReaderQuotas.Max);

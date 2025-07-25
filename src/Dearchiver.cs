@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,11 +13,7 @@ static class Dearchiver
 
     static readonly string _path = Path.Combine(Path.GetTempPath(), $"{Path.GetRandomFileName()}.exe");
 
-    static Dearchiver() => AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-    {
-        try { File.Delete(_path); }
-        catch { }
-    };
+    static Dearchiver() => AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { File.Delete(_path); } catch { } };
 
     static readonly SemaphoreSlim _semaphore = new(1, 1);
 
