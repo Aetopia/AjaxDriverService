@@ -1,8 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Runtime.Serialization.Json;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Linq;
@@ -11,77 +16,71 @@ using static System.Environment;
 
 static class Drivers
 {
-   const string Format = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&osCode={0}&is64bit={1}&deviceID={2}&dch={3}&upCRD={4}";
+    const string Uri = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&osCode={0}&is64bit={1}&deviceID={2}&dch={3}&upCRD={4}";
 
-   static readonly string Address = string.Format(Format, $"{OSVersion.Version.Major}.{OSVersion.Version.Minor}", Is64BitOperatingSystem ? 1 : 0, "{0}", "{1}", "{2}");
+    static readonly string Address = string.Format(Uri, $"{OSVersion.Version.Major}.{OSVersion.Version.Minor}", Is64BitOperatingSystem ? 1 : 0, "{0}", "{1}", "{2}");
 
-   static readonly HttpClient Client = new();
+    static async Task<Dictionary<string, string>> GetDriversAsync(string value)
+    {
+        Dictionary<string, string> collection = [];
 
-   static async Task<Dictionary<string, string>> DriversAsync(string value)
-   {
-      Dictionary<string, string> collection = [];
+        var format = string.Format(Address, value, "{0}", "{1}");
 
-      var format = string.Format(Address, value, "{0}", "{1}");
+        Task<Tuple<string, string>>[] tasks = [GetUriAsync(string.Format(format, 0, 0)), GetUriAsync(string.Format(format, 1, 0))];
+        await Task.WhenAll(tasks);
 
-      var standard = UriAsync(string.Format(format, 0, 0));
-      var dch = UriAsync(string.Format(format, 1, 0));
-      await Task.WhenAll([standard, dch]);
+        Tuple<string, string> standard = await tasks[0], dch = await tasks[1];
 
-      if (await standard is not null)
-         collection.Add("Standard", await standard);
+        if (dch is not null)
+        {
+            collection.Add(dch.Item1, dch.Item2);
+            dch = await GetUriAsync(string.Format(format, 1, 1));
+            if (dch is not null) collection.Add(dch.Item1, dch.Item2);
+        }
+        else if (standard is not null)
+        {
+            collection.Add(standard.Item1, standard.Item2);
+            standard = await GetUriAsync(string.Format(format, 0, 1));
+            if (standard is not null) collection.Add(standard.Item1, standard.Item2);
+        }
 
-      if (await dch is not null)
-         collection.Add("DCH", await dch);
+        return collection;
+    }
 
-      if (collection.Any())
-      {
-         standard = UriAsync(string.Format(format, 0, 1));
-         dch = UriAsync(string.Format(format, 1, 1));
-         await Task.WhenAll([standard, dch]);
+    static async Task<Tuple<string, string>> GetUriAsync(string address)
+    {
+        using var stream = await Internet.GetStreamAsync(address);
+        using var reader = JsonReaderWriterFactory.CreateJsonReader(stream, XmlDictionaryReaderQuotas.Max);
 
-         if (await standard is not null)
-            collection.Add("Standard Studio", await standard);
+        var source = XElement.Load(reader);
 
-         if (await dch is not null)
-            collection.Add("DCH Studio", await dch);
-      }
+        var key = source.Descendants("Name").FirstOrDefault();
+        if (key is null) return null;
 
-      return collection;
-   }
+        var value = source.Descendants("DownloadURL").FirstOrDefault();
+        if (value is null) return null;
 
-   static async Task<string> UriAsync(string value)
-   {
-      using var stream = await Client.GetStreamAsync(value);
-      using var reader = JsonReaderWriterFactory.CreateJsonReader(stream, XmlDictionaryReaderQuotas.Max);
+        return new(WebUtility.UrlDecode(key.Value), $"{new UriBuilder(value.Value) { Host = "international.download.nvidia.com" }.Uri}");
+    }
 
-      foreach (var item in XElement.Load(reader).Descendants("DownloadURL"))
-         return $"{new UriBuilder(item.Value) { Host = "international.download.nvidia.com" }.Uri}";
-      return null;
-   }
+    internal static async Task<Dictionary<string, Dictionary<string, string>>> GetAsync()
+    {
+        Dictionary<string, Task<Dictionary<string, string>>> tasks = [];
 
-   internal static async Task<Dictionary<string, Dictionary<string, string>>> GetAsync()
-   {
-      Dictionary<string, Task<Dictionary<string, string>>> tasks = [];
+        using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\PCI");
 
-      using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\PCI");
+        foreach (var item in key.GetSubKeyNames())
+        {
+            var array = item.Split('&');
+            if (array[0] is not "VEN_10DE") continue;
 
-      foreach (var item in key.GetSubKeyNames())
-      {
-         var array = item.Split('&');
-         if (array[0] is not "VEN_10DE") continue;
+            var value = array[1].Split('_')[1];
+            tasks.Add(value, GetDriversAsync(value));
+        }
 
-         var value = array[1].Split('_')[1];
-         tasks.Add(value, DriversAsync(value));
-      }
+        await Task.WhenAll(tasks.Values);
 
-      await Task.WhenAll(tasks.Values);
-
-      Dictionary<string, Dictionary<string, string>> collection = [];
-
-      foreach (var task in tasks)
-         if ((await task.Value).Any())
-            collection.Add(task.Key, await task.Value);
-
-      return collection;
-   }
+        Dictionary<string, Dictionary<string, string>> collection = [];
+        foreach (var task in tasks) if ((await task.Value).Count > 0) collection.Add(task.Key, await task.Value); return collection;
+    }
 }

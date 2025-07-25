@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 sealed class Form : System.Windows.Forms.Form
@@ -15,7 +16,8 @@ sealed class Form : System.Windows.Forms.Form
         Font = SystemFonts.MessageBoxFont;
 
         Text = "NVIDIA Driver Resolver";
-        ClientSize = new(400 / 2, 300 / 2);
+        ClientSize = new(256, 85);
+        MaximumSize = MinimumSize = Size;
 
         TableLayoutPanel tableLayoutPanel = new()
         {
@@ -27,78 +29,127 @@ sealed class Form : System.Windows.Forms.Form
 
         Controls.Add(tableLayoutPanel);
 
-        ComboBox comboBox = new()
+        ComboBox comboBox1 = new()
         {
             Dock = DockStyle.Fill,
-            DropDownStyle = ComboBoxStyle.DropDownList,
+            DropDownStyle = ComboBoxStyle.DropDownList
         };
         tableLayoutPanel.RowStyles.Add(new() { SizeType = SizeType.AutoSize });
-        tableLayoutPanel.Controls.Add(comboBox, 0, tableLayoutPanel.Controls.Count);
+        tableLayoutPanel.Controls.Add(comboBox1, 0, 0);
 
-        var buttons = new Button[4];
+        ComboBox comboBox2 = new()
+        {
+            Dock = DockStyle.Fill,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+        tableLayoutPanel.RowStyles.Add(new() { SizeType = SizeType.AutoSize });
+        tableLayoutPanel.Controls.Add(comboBox2, 0, 1);
+
+        ProgressBar progressBar = new()
+        {
+            Dock = DockStyle.Fill,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            Style = ProgressBarStyle.Marquee,
+            MarqueeAnimationSpeed = 1,
+            Maximum = 200
+        };
+        tableLayoutPanel.RowStyles.Add(new() { SizeType = SizeType.Percent });
+        tableLayoutPanel.Controls.Add(progressBar, 0, 2);
+
+        Button button = new()
+        {
+            Text = "🡻",
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Visible = false
+        };
+        tableLayoutPanel.Controls.Add(button, 0, 2);
+
         Dictionary<string, Dictionary<string, string>> collection = [];
 
-        for (int index = 0; index < buttons.Length; index++)
+        comboBox1.SelectedIndexChanged += async (_, _) =>
         {
-            Button button = buttons[index] = new()
+            SuspendLayout(); try
             {
-                Dock = DockStyle.Fill,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Enabled = false
-            };
+                await Task.Yield();
 
-            button.Click += (sender, args) => { using (Process.Start((string)((Button)sender).Tag)) { } };
+                comboBox2.Items.Clear();
 
-            tableLayoutPanel.RowStyles.Add(new()
-            {
-                SizeType = SizeType.Percent,
-                Height = 25
-            });
-            tableLayoutPanel.Controls.Add(button, 0, tableLayoutPanel.Controls.Count);
-        }
-
-        buttons[0].Text = "Standard";
-        buttons[1].Text = "Standard Studio";
-        buttons[2].Text = "DCH";
-        buttons[3].Text = "DCH Studio";
-
-        comboBox.SelectedIndexChanged += (_, _) =>
-        {
-            SuspendLayout();
-
-            if (!collection.TryGetValue((string)comboBox.SelectedItem, out var item))
-                return;
-
-            foreach (var button in buttons)
-            {
-                if (!item.TryGetValue(button.Text, out var value))
+                if (!collection.TryGetValue((string)comboBox1.SelectedItem, out var value))
                 {
-                    button.Enabled = false;
-                    button.Tag = null;
-                    continue;
+                    comboBox2.Enabled = false;
+                    return;
                 }
 
-                button.Enabled = true;
-                button.Tag = value;
-            }
+                foreach (var item in value)
+                {
+                    await Task.Yield();
+                    comboBox2.Items.Add(item.Key);
+                }
 
-            ResumeLayout();
+                comboBox2.Enabled = comboBox2.Items.Count > 1;
+                comboBox2.SelectedIndex = 0;
+            }
+            finally { ResumeLayout(); }
+        };
+
+        button.Click += async (_, _) =>
+        {
+            tableLayoutPanel.Enabled = false;
+            button.Visible = false;
+
+            progressBar.Value = 0; progressBar.Visible = true;
+            progressBar.Style = ProgressBarStyle.Marquee;
+
+            try
+            {
+                if (!collection.TryGetValue((string)comboBox1.SelectedItem, out var item))
+                    return;
+
+                if (!item.TryGetValue((string)comboBox2.SelectedItem, out var value))
+                    return;
+
+                var path = await Downloader.GetAsync(new(value), (_) => Invoke(() =>
+                {
+                    if (progressBar.Style is ProgressBarStyle.Marquee)
+                        progressBar.Style = ProgressBarStyle.Blocks;
+                    progressBar.Increment(1);
+                }));
+              
+                path = await Dearchiver.GetAsync(path, (_) => Invoke(() => progressBar.Increment(1)));
+              
+                using (Process.Start(path)) { }
+            }
+            finally
+            {
+                tableLayoutPanel.Enabled = true;
+                progressBar.Visible = false;
+                button.Visible = true;
+            }
         };
 
         Load += async (_, _) =>
         {
-            SuspendLayout();
+            await Task.Yield();
+            collection = await Drivers.GetAsync();
 
-            foreach (var item in collection = await Drivers.GetAsync())
-                comboBox.Items.Add(item.Key);
+            SuspendLayout(); try
+            {
+                foreach (var item in collection)
+                {
+                    await Task.Yield();
+                    comboBox1.Items.Add(item.Key);
+                }
 
-            if (tableLayoutPanel.Enabled = collection.Any())
-                comboBox.SelectedIndex = 0;
+                comboBox1.Enabled = comboBox1.Items.Count > 1;
+                comboBox1.SelectedIndex = 0;
 
+                progressBar.Visible = false;
+                button.Visible = true;
                 tableLayoutPanel.Enabled = true;
-
-                ResumeLayout();
+            }
+            finally { ResumeLayout(); }
         };
     }
 }
