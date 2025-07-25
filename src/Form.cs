@@ -45,25 +45,14 @@ sealed class Form : System.Windows.Forms.Form
         tableLayoutPanel.RowStyles.Add(new() { SizeType = SizeType.AutoSize });
         tableLayoutPanel.Controls.Add(comboBox2, 0, 1);
 
-        ProgressBar progressBar = new()
-        {
-            Dock = DockStyle.Fill,
-            Anchor = AnchorStyles.Left | AnchorStyles.Right,
-            Style = ProgressBarStyle.Marquee,
-            MarqueeAnimationSpeed = 1,
-            Maximum = 200
-        };
-        tableLayoutPanel.RowStyles.Add(new() { SizeType = SizeType.Percent });
-        tableLayoutPanel.Controls.Add(progressBar, 0, 2);
-
         Button button = new()
         {
-            Text = "🡻",
+            Text = "🢅",
             Dock = DockStyle.Bottom,
             AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Visible = false
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
+        tableLayoutPanel.RowStyles.Add(new() { SizeType = SizeType.AutoSize });
         tableLayoutPanel.Controls.Add(button, 0, 2);
 
         Dictionary<string, Dictionary<string, string>> collection = [];
@@ -97,11 +86,6 @@ sealed class Form : System.Windows.Forms.Form
         button.Click += async (_, _) =>
         {
             tableLayoutPanel.Enabled = false;
-            button.Visible = false;
-
-            progressBar.Value = 0; progressBar.Visible = true;
-            progressBar.Style = ProgressBarStyle.Marquee;
-
             try
             {
                 if (!collection.TryGetValue((string)comboBox1.SelectedItem, out var item))
@@ -110,23 +94,9 @@ sealed class Form : System.Windows.Forms.Form
                 if (!item.TryGetValue((string)comboBox2.SelectedItem, out var value))
                     return;
 
-                var path = await Downloader.GetAsync(new(value), (_) => Invoke(() =>
-                {
-                    if (progressBar.Style is ProgressBarStyle.Marquee)
-                        progressBar.Style = ProgressBarStyle.Blocks;
-                    progressBar.Increment(1);
-                }));
-              
-                path = await Dearchiver.GetAsync(path, (_) => Invoke(() => progressBar.Increment(1)));
-              
-                using (Process.Start(path)) { }
+                using (Process.Start(value)) { }
             }
-            finally
-            {
-                tableLayoutPanel.Enabled = true;
-                progressBar.Visible = false;
-                button.Visible = true;
-            }
+            finally { tableLayoutPanel.Enabled = true; }
         };
 
         Load += async (_, _) =>
@@ -145,8 +115,6 @@ sealed class Form : System.Windows.Forms.Form
                 comboBox1.Enabled = comboBox1.Items.Count > 1;
                 comboBox1.SelectedIndex = 0;
 
-                progressBar.Visible = false;
-                button.Visible = true;
                 tableLayoutPanel.Enabled = true;
             }
             finally { ResumeLayout(); }
