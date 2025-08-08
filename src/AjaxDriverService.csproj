@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net481</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Optimize>true</Optimize>
@@ -8,6 +9,8 @@
 
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <ApplicationManifest>Resources/Application.manifest</ApplicationManifest>
 
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <AssemblyTitle>AJAX Driver Service</AssemblyTitle>
@@ -19,6 +22,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Net.Http" />
   </ItemGroup>
 </Project>
