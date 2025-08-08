@@ -6,6 +6,14 @@
 
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <AssemblyTitle>AJAX Driver Service</AssemblyTitle>
+    <Product>AJAX Driver Service</Product>
+    <Copyright>Copyright (C) 2025</Copyright>
+    <Company>Aetopia</Company>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <GenerateAssemblyInformationalVersionAttribute>false</GenerateAssemblyInformationalVersionAttribute>
   </PropertyGroup>
 
   <ItemGroup>
