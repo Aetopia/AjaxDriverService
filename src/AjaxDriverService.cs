@@ -1,23 +1,23 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.Serialization.Json;
 using System.Threading.Tasks;
-using System.Web.Script.Serialization;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Win32;
 using static System.Environment;
 
-public static class AjaxDriverService
+static class AjaxDriverService
 {
     const string Uri = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&osCode={0}&is64bit={1}&deviceID={2}&dch={3}&upCRD={4}";
 
-    static readonly string _uri; static readonly HttpClient _httpClient = new();
+    static readonly string _uri;
+
+    static readonly HttpClient _httpClient = new();
 
     static AjaxDriverService()
     {
@@ -27,7 +27,7 @@ public static class AjaxDriverService
         _uri = string.Format(Uri, osCode, is64bit, "{0}", "{1}", "{2}");
     }
 
-    static async Task<Tuple<string, Uri>?> ParseDriverAsync(string uri)
+    static async Task<Driver?> GetDriverFromUriAsync(string uri)
     {
         using var stream = await _httpClient.GetStreamAsync(uri);
         using var reader = JsonReaderWriterFactory.CreateJsonReader(stream, XmlDictionaryReaderQuotas.Max);
@@ -37,41 +37,53 @@ public static class AjaxDriverService
         var name = json.Descendants("Name").FirstOrDefault()?.Value;
         if (name is null) return null;
 
-        var url = json.Descendants("DownloadURL").First().Value;
-        var builder = new UriBuilder(url) { Host = "international.download.nvidia.com" };
+        var version = json.Descendants("Version").First().Value;
 
-        return new(WebUtility.UrlDecode(name), builder.Uri);
+        var url = json.Descendants("DownloadURL").First().Value;
+        UriBuilder builder = new(url) { Host = "international.download.nvidia.com" };
+
+        return new(WebUtility.UrlDecode(name), version, builder.Uri);
     }
 
-    static async Task GetDriverAsync(ConcurrentDictionary<string, List<Tuple<string, Uri>>> devices, string deviceId)
+    static async Task GetDriversForDeviceIdAsync(ConcurrentBag<Device> devices, string deviceId)
     {
-        var standardUri = string.Format(_uri, deviceId, 0, 0);
         var dchUri = string.Format(_uri, deviceId, 1, 0);
+        var standardUri = string.Format(_uri, deviceId, 0, 0);
 
-        Task<Tuple<string, Uri>?> standardTask = ParseDriverAsync(standardUri), dchTask = ParseDriverAsync(dchUri);
-        await Task.WhenAll(standardTask, dchTask);
+        var dchTask = GetDriverFromUriAsync(dchUri);
+        var standardTask = GetDriverFromUriAsync(standardUri);
 
-        List<Tuple<string, Uri>> drivers = [];
-        Tuple<string, Uri>? dch = await dchTask, standard = await standardTask;
+        await Task.WhenAll(dchTask, standardTask);
 
-        var flag = -1;
-        if (dch is not null) { flag = 1; drivers.Add(dch); }
-        else if (standard is not null) { flag = 0; drivers.Add(standard); }
+        var arg = -1; List<Driver>? drivers = null;
+        Driver? dch = await dchTask, standard = await standardTask;
 
-        if (flag > -1)
+        if (dch is not null)
         {
-            var crdUri = string.Format(_uri, deviceId, flag, 1);
-            var crd = await ParseDriverAsync(crdUri);
+            arg = 1;
+            (drivers ??= []).Add(dch);
+        }
+        else if (standard is not null)
+        {
+            arg = 0;
+            (drivers ??= []).Add(standard);
+        }
+
+        if (drivers is null) return;
+
+        if (arg is not -1)
+        {
+            var crdUri = string.Format(_uri, deviceId, arg, 1);
+            var crd = await GetDriverFromUriAsync(crdUri);
             if (crd is not null) drivers.Add(crd);
         }
 
-        if (drivers.Count > 0) devices.TryAdd(deviceId, drivers);
+        devices.Add(new(deviceId, drivers));
     }
 
-    public static async Task DriverManualLookupAsync()
+    internal static async Task<ConcurrentBag<Device>> DriverManualLookupAsync()
     {
-        List<Task> tasks = [];
-        ConcurrentDictionary<string, List<Tuple<string, Uri>>> devices = [];
+        List<Task> tasks = []; ConcurrentBag<Device> devices = [];
 
         using var registryKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\PCI");
         foreach (var subKeyName in registryKey.GetSubKeyNames())
@@ -80,11 +92,9 @@ public static class AjaxDriverService
             if (substrings[0] is not "VEN_10DE") continue;
 
             var deviceId = substrings[1].Split('_')[1];
-            tasks.Add(GetDriverAsync(devices, deviceId));
+            tasks.Add(GetDriversForDeviceIdAsync(devices, deviceId));
         }
 
-        await Task.WhenAll(tasks);
-
-        Console.WriteLine(new JavaScriptSerializer().Serialize(devices));
+        await Task.WhenAll(tasks); return devices;
     }
 }
